@@ -6,6 +6,7 @@ import '../Models/Cours.dart';
 import '../Pages/CourseActions.dart';
 import '../Pages/CoursesCheckList.dart';
 
+
 class CoursItem extends StatelessWidget {
   final Cours cours;
   final int userID;
@@ -16,9 +17,9 @@ class CoursItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 2.0), // padding sur Y
-      color: Colors.grey.shade200, // couleur de fond personnalisée
+      color: Colors.white, // couleur de fond personnalisée
       child: ListTile(
-        title: Text("${cours.jour} - ${cours.heure.substring(0,5)} - ${cours.dojo?.nom}",style: TextStyle(color: Colors.blue,fontWeight: FontWeight.bold),),
+        title: Text("${cours.jour} - ${cours.heure.substring(0,5)} - ${cours.dojo?.nom}",style: TextStyle(color: Colors.black,fontWeight: FontWeight.bold),),
         //subtitle: Text("Âge : ${cours.categorieAge}"),
         onTap: (){
           print("${cours.id} ${cours.jour} ${cours.heure.substring(0,5)}");

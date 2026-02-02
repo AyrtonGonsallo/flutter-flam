@@ -14,6 +14,8 @@ class Appel {
   });
 
   factory Appel.fromJson(Map<String, dynamic> json) {
+    //print(json['adherentId']);
+    //print(json['adherentId'].runtimeType);
     return Appel(
       id: json['id'],
       status: json['status'],

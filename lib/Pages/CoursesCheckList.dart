@@ -6,6 +6,7 @@ import 'package:flam/Pages/Courses.dart';
 import 'package:date_format/date_format.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 import '../Constants/ApiConstants.dart';
 import '../Models/Appel.dart';
@@ -15,10 +16,19 @@ import 'Home.dart';
 import 'ScannerPage.dart';
 import 'TeacherAdherentsList.dart';
 
+class CoursDate {
+  final String date;
+
+  CoursDate({required this.date});
+
+  factory CoursDate.fromJson(Map<String, dynamic> json) {
+    return CoursDate(date: json['date']);
+  }
+}
+
 class CourseCheckListPage extends StatefulWidget {
   final int userId;
   final int courseId;
-
 
   const CourseCheckListPage({
     super.key,
@@ -30,13 +40,12 @@ class CourseCheckListPage extends StatefulWidget {
   _CourseCheckListPageState createState() => _CourseCheckListPageState();
 }
 
-
-
 class _CourseCheckListPageState extends State<CourseCheckListPage> {
   late Future<List<dynamic>> combinedFuture = Future.value([]);
   late String apiUrl;
   late int userId;
   late int courseId;
+  late Future<CoursDate> coursDateFuture;
   String searchQuery = '';
   bool sortAsc = true;
   int sortColumnIndex = 0;
@@ -55,12 +64,20 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
       fetchAdherents(widget.courseId),
       fetchCours(widget.courseId),
     ]);
+    coursDateFuture = fetchCoursDate(widget.courseId);
   }
-
+  Future<CoursDate> fetchCoursDate(int courseId) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$apiUrl/api/adherents/get_course_date/$courseId"),
+      );
+      final data = jsonDecode(response.body);
+      return CoursDate.fromJson(data);
+    } catch (e) {
+      throw Exception("Erreur fetchCoursDate : $e");
+    }
+  }
   void loadData() {
-    userId = widget.userId;
-    courseId = widget.courseId;
-    apiUrl = ApiConstants.baseUrl;
     setState(() {
       combinedFuture = Future.wait([
         fetchAdherents(courseId),
@@ -68,23 +85,17 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
       ]);
     });
   }
-// 🔹 Recherche avec debounce
-  void _onSearchChanged(String query) {
-    print("-> _onSearchChanged appelé avec query='$query'");
 
+  // Recherche avec debounce
+  void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) {
-      print("   -> debounce annulé");
       _debounce!.cancel();
     }
 
     _debounce = Timer(const Duration(milliseconds: 400), () {
-      print("   -> timer fini, longueur query = ${query.length}");
-
       if (query.length >= 3) {
-        print("   -> query >= 3 caractères, appel _fetchAdherents");
         _fetchAdherents(query);
       } else {
-        print("   -> query < 3 caractères, reset _results et _isLoading");
         if (!mounted) return;
         setState(() {
           _results = [];
@@ -95,15 +106,10 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
   }
 
   Future<void> _fetchAdherents(String query) async {
-    print("-> _fetchAdherents appelé avec query='$query'");
-    if (!mounted) {
-      print("   -> widget démonté, return");
-      return;
-    }
+    if (!mounted) return;
 
     setState(() {
       _isLoading = true;
-      print("   -> _isLoading = $_isLoading");
     });
 
     try {
@@ -111,39 +117,24 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
         Uri.parse("$apiUrl/api/adherents/search_adherents?q=$query"),
       );
 
-      print("   -> réponse reçue statusCode=${response.statusCode}");
-
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print("   -> data reçue: $data");
-
         setState(() {
           _results = data;
-          print("   -> _results mis à jour: $_results");
         });
       } else {
-        print("   -> statusCode != 200, reset _results");
         setState(() => _results = []);
       }
     } catch (e) {
-      print("   -> erreur catch: $e");
       if (!mounted) return;
       setState(() => _results = []);
     } finally {
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        print("   -> finally: _isLoading = $_isLoading, _results.isEmpty = ${_results.isEmpty}");
-      });
+      setState(() => _isLoading = false);
     }
   }
-
-
-
-
-
 
   Future<List<AdherentAvecAppel>> fetchAdherents(int courseId) async {
     final response = await http.get(
@@ -151,17 +142,14 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
         "$apiUrl/api/adherents/adherents_by_cours_with_appels/$courseId",
       ),
     );
-    if (response.body.length > 0) {
+    if (response.body.isNotEmpty) {
       final data = jsonDecode(response.body) as List;
-      print(data);
+      //print(data);
       return data.map((e) => AdherentAvecAppel.fromJson(e)).toList();
     } else {
-      final data = jsonDecode(response.body);
-      print(data);
       return [];
     }
   }
-
 
   Future<List<Cours>> fetchCours(int courseId) async {
     try {
@@ -169,7 +157,6 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
         Uri.parse("$apiUrl/api/dojo_cours/get_cours/$courseId"),
       );
       final data = jsonDecode(response.body);
-      print(data);
       return [Cours.fromJson(data)];
     } on SocketException {
       throw Exception("Pas de connexion Internet.");
@@ -183,12 +170,11 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
   }
 
   Future<void> updateorCreateAppelStatus(
-    int adherentId,
-    int coursId,
-    bool status,
-  ) async {
+      int adherentId,
+      int coursId,
+      bool status,
+      ) async {
     try {
-      // Exemple, adapte selon ton API
       final response = await http.post(
         Uri.parse('$apiUrl/api/adherents/upsert_appel'),
         headers: {'Content-Type': 'application/json'},
@@ -198,38 +184,27 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
           'coursId': coursId,
         }),
       );
-      print("mise a jour appel");
-      print(response.body);
       if (response.statusCode != 200) {
         throw Exception('Erreur API');
       }
-    } on SocketException {
-      throw Exception("Pas de connexion Internet.");
-    } on TimeoutException {
-      throw Exception("Le serveur met trop de temps à répondre.");
-    } on FormatException {
-      throw Exception("Réponse invalide du serveur.");
     } catch (e) {
       throw Exception("Erreur inattendue : $e");
     }
   }
 
-
-
-
-  // 👉 La pop-up (dialogue)
   void _showPonctuelDialog() {
+    final dialogController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    List<dynamic> dialogResults = [];
+    bool dialogLoading = false;
+    Timer? dialogDebounce;
+
     showDialog(
       context: context,
-      builder: (context) {
-        List<dynamic> dialogResults = [];
-        bool dialogLoading = false;
-        TextEditingController dialogController = TextEditingController();
-        Timer? dialogDebounce;
-
+      barrierDismissible: false, // empêche fermer en cliquant dehors
+      builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            // Fonction de recherche locale pour le dialog
             void searchAdherents(String query) {
               if (dialogDebounce?.isActive ?? false) dialogDebounce!.cancel();
 
@@ -263,42 +238,90 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
               });
             }
 
-            return AlertDialog(
-              title: const Text('Ajouter une présence ponctuelle'),
-              content: SizedBox(
-                width: double.maxFinite,
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Container(
+                padding: EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(
-                      controller: dialogController,
-                      decoration: const InputDecoration(
-                        labelText: 'Rechercher un adhérent',
-                        prefixIcon: Icon(Icons.search),
+                    /// TITRE
+                    Text(
+                      'Ajouter une présence ponctuelle',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
                       ),
-                      onChanged: searchAdherents,
                     ),
-                    const SizedBox(height: 10),
+                    SizedBox(height: 20),
+
+                    /// CHAMP DE RECHERCHE
+                    Form(
+                      key: formKey,
+                      child: TextFormField(
+                        controller: dialogController,
+                        decoration: InputDecoration(
+                          labelText: 'Rechercher un adhérent',
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          labelStyle: TextStyle(color: Colors.black87),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: Colors.grey.shade400),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: Color(0xFFD8BF6C), width: 1),
+                          ),
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: searchAdherents,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'Veuillez entrer un nom';
+                          return null;
+                        },
+                      ),
+                    ),
+
+                    SizedBox(height: 20),
+
+                    /// LISTE DES RÉSULTATS
                     dialogLoading
-                        ? const Center(child: CircularProgressIndicator())
+                        ? Center(child: CircularProgressIndicator())
                         : dialogResults.isEmpty
-                        ? const Text('Aucun résultat')
-                        : Expanded(
+                        ? Text('Aucun résultat')
+                        : Container(
+                      height: 200, // ajuste selon besoin
                       child: ListView.builder(
                         itemCount: dialogResults.length,
                         itemBuilder: (context, index) {
                           final adherent = dialogResults[index];
                           return ListTile(
-                            title: Text(
-                                '${adherent['nom']} ${adherent['prenom'] ?? ''}'),
+                            title: Text('${adherent['nom']} ${adherent['prenom'] ?? ''}'),
                             onTap: () async {
-                              // Appel ponctuel
                               final response = await http.post(
-                                Uri.parse(
-                                    "$apiUrl/api/adherents/add_appel_ponctuel"),
-                                headers: {
-                                  'Content-Type': 'application/json'
-                                },
+                                Uri.parse("$apiUrl/api/adherents/add_appel_ponctuel"),
+                                headers: {'Content-Type': 'application/json'},
                                 body: json.encode({
                                   'status': true,
                                   'coursId': courseId,
@@ -306,27 +329,21 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
                                 }),
                               );
 
+                              Navigator.of(context).pop();
+
                               if (response.statusCode == 201) {
-                                // Succès
-                                if (!mounted) return;
-                                Navigator.of(context).pop(); // ferme le dialog
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                      content: Text('Présence ponctuelle ajoutée ✅'),
-                                      backgroundColor: Colors.green,
+                                    content: Text('Présence ponctuelle ajoutée ✅'),
+                                    backgroundColor: Colors.green,
                                   ),
                                 );
-                              } else if (response.statusCode == 409) {
-                                // Appel déjà existant
-                                if (!mounted) return;
-                                Navigator.of(context).pop(); // ferme le dialog
+                                loadData();
+                              } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(
-                                      json.decode(response.body)['message'] ??
-                                          'Appel déjà enregistré ❌',
-                                    ),
-                                    backgroundColor: Colors.green,
+                                    content: Text(json.decode(response.body)['message'] ?? 'Appel déjà enregistré ❌'),
+                                    backgroundColor: Colors.red,
                                   ),
                                 );
                               }
@@ -335,16 +352,28 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
                         },
                       ),
                     ),
+
+                    SizedBox(height: 24),
+
+                    /// BOUTON FERMER
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFD8BF6C),
+                          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Fermer',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              actions: [
-
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Fermer'),
-                ),
-              ],
             );
           },
         );
@@ -356,351 +385,464 @@ class _CourseCheckListPageState extends State<CourseCheckListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white, // fond blanc pour le body
       appBar: AppBar(
-        title: Text("Appel"),
+        title: const Text("Appel"),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1.0),
+          preferredSize: const Size.fromHeight(1.0),
           child: Container(
-            color: Colors.grey, // couleur du trait
-            height: 1.0, // épaisseur du trait
+            color: Colors.grey,
+            height: 1.0,
           ),
         ),
-
         actions: [
           Padding(
-            padding: EdgeInsets.only(right: 10),
+            padding: const EdgeInsets.only(right: 10),
             child: Image.asset('images/logo_blanc_transparent.png', height: 40),
           ),
         ],
       ),
+
+      // ===== Drawer modernisé =====
       drawer: Drawer(
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(color: Colors.black),
-              child: Column(
-                children: [
-                  Image(image: AssetImage("images/logo_blanc_transparent.png")),
-                ],
+        child: Container(
+          color: Colors.white,
+          child: Column(
+            children: [
+              // Header
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(25),
+                    bottomRight: Radius.circular(25),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Image.asset(
+                    "images/logo_blanc_transparent.png",
+                    height: 50,
+                  ),
+                ),
               ),
-            ),
-            Expanded(
-              child: ListView(
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.home),
-                    title: Text("Accueil"),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => HomePage(userId: userId),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.home),
-                    title: Text("Mes cours"),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CoursesListPage(userId: userId),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.people),
-                    title: Text("Mes adhérents"),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              TeacherAdherentsListPage(userId: userId),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+
+              // Menu Items
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  children: [
+                    _buildDrawerItem(
+                      icon: Icons.home,
+                      text: "Accueil",
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => HomePage(userId: userId),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDrawerItem(
+                      icon: Icons.article,
+                      text: "Mes cours",
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CoursesListPage(userId: userId),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDrawerItem(
+                      icon: Icons.people,
+                      text: "Mes adhérents",
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                TeacherAdherentsListPage(userId: userId),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+
       body: FutureBuilder<List<dynamic>>(
         future: combinedFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
+            print(snapshot);
             return Center(child: Text('Erreur : ${snapshot.error}'));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(child: Text('Aucun adhérent trouvé.'));
           }
 
-          final adherents_avec_appels =
-              snapshot.data![0] as List<AdherentAvecAppel>;
+          final adherents_avec_appels = snapshot.data![0] as List<AdherentAvecAppel>;
           final cours = snapshot.data![1] as List<Cours>;
           final now = DateTime.now();
           final formattedDate = formatDate(now, [dd, '/', mm, '/', yyyy]);
-          // ou autre format : DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(now);
 
           return Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "${cours[0].dojo!.nom} - ${cours[0].jour} - ${cours[0].heure.substring(0, 5)} - ${formattedDate}",
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () async {
+                Center(
+                  child: FutureBuilder<CoursDate>(
+                    future: coursDateFuture,
+                    builder: (context, dateSnap) {
+                      if (dateSnap.connectionState == ConnectionState.waiting) {
+                        return const Text("Chargement date...");
+                      } else if (dateSnap.hasError) {
+                        return Text("Date indisponible");
+                      } else if (!dateSnap.hasData) {
+                        return const Text("Aucune date");
+                      }
+                      String humanDate(String d) {
+                        final date = DateTime.parse(d);
+                        return DateFormat('dd/MM/yyyy').format(date);
+                      }
 
-                    final refresh = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => ScannerPage(coursId: courseId)),
-                    );
+                      final date = dateSnap.data!.date;  // "2025-12-01"
 
-                    if (refresh == true) {
-                      // 🔁 Recharger les données
-                      loadData(); // ta fonction pour mettre à jour l’affichage
-                    }
-                  },
-                  style: TextButton.styleFrom(
-                    backgroundColor: Color(0xFFD8BF6C), // Couleur de fond du bouton
-                    padding: EdgeInsets.symmetric(
-                      // Espace interne
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      // Coins arrondis (optionnel)
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-
-                  child: Text(
-                    'Scanner les QR codes',
-                    style: TextStyle(
-                      color: Colors.white, // ou n'importe quelle couleur de lien
-                    ),
+                      return Text(
+                        "${cours[0].dojo!.nom} - ${cours[0].jour} - ${cours[0].heure.substring(0, 5)} - ${humanDate(date)}",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(1.5, 1.5),
+                              blurRadius: 3,
+                              color: Colors.grey.withOpacity(0.4),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: 10),
+
+                // ===== Search Field =====
                 TextField(
+                  controller: _searchController,
                   decoration: InputDecoration(
-                    labelText: 'Rechercher un adhérent',
-                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Rechercher un adhérent',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    isDense: true,
+                    contentPadding:
+                    const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
                     border: OutlineInputBorder(
-                      borderSide: const BorderSide(
-                        color: Color(0xFFD8BF6C),
-                        width: 1.0,
-                      ),
-                      borderRadius: BorderRadius.circular(10.0),
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide.none,
                     ),
                   ),
                   onChanged: (value) {
                     setState(() {
                       searchQuery = value.toLowerCase();
-                      print(searchQuery);
                     });
                   },
                 ),
                 const SizedBox(height: 10),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: Builder(
-                      builder: (context) {
-                        List<AdherentAvecAppel> filteredList =
-                            adherents_avec_appels.where((item) {
-                              final nom = item.adherent.nom.toLowerCase();
-                              final prenom = item.adherent.prenom.toLowerCase();
-                              return nom.contains(searchQuery) ||
-                                  prenom.contains(searchQuery);
-                            }).toList();
 
-                        filteredList.sort((a, b) {
-                          final aVal = sortColumnIndex == 0
-                              ? a.adherent.nom
-                              : a.adherent.prenom;
-                          final bVal = sortColumnIndex == 0
-                              ? b.adherent.nom
-                              : b.adherent.prenom;
-                          return sortAsc
-                              ? aVal.compareTo(bVal)
-                              : bVal.compareTo(aVal);
-                        });
-                        return SizedBox(
-                          width: MediaQuery.of(context).size.width,
-                          child: DataTable(
-                            headingRowColor: WidgetStateColor.resolveWith(
-                              (states) => Color(0xFFD8BF6C),
+                // ===== Boutons Scanner et Présence =====
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final refresh = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ScannerPage(coursId: courseId),
                             ),
-                            dataRowColor: WidgetStateColor.resolveWith(
-                              (states) => Colors.grey.shade200,
-                            ),
-                            columnSpacing: 0,
-                            sortColumnIndex: sortColumnIndex,
-                            sortAscending: sortAsc,
-                            columns: [
-                              DataColumn(
-                                label: Text(
-                                  'Nom',
-                                  style: TextStyle(fontStyle: FontStyle.italic),
-                                ),
-                                onSort: (columnIndex, ascending) {
-                                  setState(() {
-                                    sortColumnIndex = columnIndex;
-                                    sortAsc = ascending;
-                                  });
-                                },
-                              ),
-                              DataColumn(
-                                label: Text(
-                                  'Prénom',
-                                  style: TextStyle(fontStyle: FontStyle.italic),
-                                ),
-                                onSort: (columnIndex, ascending) {
-                                  setState(() {
-                                    sortColumnIndex = columnIndex;
-                                    sortAsc = ascending;
-                                  });
-                                },
-                              ),
-                              DataColumn(
-                                label: Text(
-                                  'Action',
-                                  style: TextStyle(fontStyle: FontStyle.italic),
-                                ),
-                              ),
-                            ],
-                            rows: filteredList.map((adherent_avec_appel) {
-                              return DataRow(
-                                cells: <DataCell>[
-                                  DataCell(
-                                    Text(adherent_avec_appel.adherent.nom),
-                                  ),
-                                  DataCell(
-                                    Text(adherent_avec_appel.adherent.prenom),
-                                  ),
-                                  DataCell(
-                                    Column(
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(
-                                            adherent_avec_appel.appel != null &&
-                                                    adherent_avec_appel
-                                                        .appel!
-                                                        .status
-                                                ? Icons.check_circle
-                                                : Icons.cancel,
-                                            color:
-                                                adherent_avec_appel.appel !=
-                                                        null &&
-                                                    adherent_avec_appel
-                                                        .appel!
-                                                        .status
-                                                ? Colors.green
-                                                : Colors.red,
-                                          ),
-                                          onPressed: () async {
-                                            final ancienStatus =
-                                                adherent_avec_appel
-                                                    .appel
-                                                    ?.status ??
-                                                false;
-                                            final bool nouveauStatus =
-                                                !ancienStatus;
-
-                                            setState(() {
-                                              if (adherent_avec_appel.appel ==
-                                                  null) {
-                                                // Si pas encore d'appel → création locale temporaire
-                                                adherent_avec_appel
-                                                    .appel = Appel(
-                                                  id: 0, // ou null si non requis par ton modèle
-                                                  status: nouveauStatus,
-                                                  adherentId:
-                                                      adherent_avec_appel
-                                                          .adherent
-                                                          .id,
-                                                  coursId: cours[0].id,
-                                                  date: DateTime.now()
-                                                      .toIso8601String(), // si utile
-                                                );
-                                              } else {
-                                                // Toggle si appel déjà existant
-                                                adherent_avec_appel
-                                                        .appel!
-                                                        .status =
-                                                    nouveauStatus;
-                                              }
-                                            });
-
-                                            try {
-                                              // Appel API qui gère création ou update selon existence
-                                              await updateorCreateAppelStatus(
-                                                adherent_avec_appel.adherent.id,
-                                                cours[0].id,
-                                                nouveauStatus,
-                                              );
-                                            } catch (e) {
-                                              // Revert en cas d'erreur
-                                              setState(() {
-                                                adherent_avec_appel
-                                                        .appel
-                                                        ?.status =
-                                                    ancienStatus;
-                                              });
-
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Erreur lors de la mise à jour',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
-                          ),
-                        );
-                      },
+                          );
+                          if (refresh == true) loadData();
+                        },
+                        icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                        label: const Text('Scanner', style: TextStyle(color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD8BF6C),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _showPonctuelDialog,
+                        icon: const Icon(Icons.person_add, color: Colors.white),
+                        label: const Text('Ponctuel', style: TextStyle(color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD8BF6C),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
-                TextButton(
-                onPressed: _showPonctuelDialog,
-                style: TextButton.styleFrom(
-                backgroundColor: const Color(0xFFD8BF6C),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+
+                // ===== Liste adhérents avec header fixe =====
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      List<AdherentAvecAppel> filteredList =
+                      adherents_avec_appels.where((item) {
+                        final nom = item.adherent.nom.toLowerCase();
+                        final prenom = item.adherent.prenom.toLowerCase();
+                        return nom.contains(searchQuery) ||
+                            prenom.contains(searchQuery);
+                      }).toList();
+
+                      filteredList.sort((a, b) {
+                        final aVal =
+                        sortColumnIndex == 0 ? a.adherent.nom : a.adherent.prenom;
+                        final bVal =
+                        sortColumnIndex == 0 ? b.adherent.nom : b.adherent.prenom;
+                        return sortAsc ? aVal.compareTo(bVal) : bVal.compareTo(aVal);
+                      });
+
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 6,
+                              offset: const Offset(1, 1),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            // Header fixe
+                            Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.black87,
+                                borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(20)),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14, horizontal: 20),
+                              child: const Row(
+                                children: [
+                                  Expanded(
+                                      child: Text('Nom',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold))),
+                                  Expanded(
+                                      child: Text('Prénom',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold))),
+                                  Expanded(
+                                      child: Text('Présence',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold))),
+                                ],
+                              ),
+                            ),
+                            // Body scrollable
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: filteredList.length,
+                                itemBuilder: (context, index) {
+                                  final adherent = filteredList[index];
+
+                                  return InkWell(
+                                    onLongPress: () {
+                                      var formattedDate = "";
+                                      if (adherent.appel?.date != null) {
+                                        final date =
+                                        DateTime.parse(adherent.appel!.date!);
+                                        formattedDate =
+                                            DateFormat('dd/MM/yyyy').format(date);
+                                      }
+
+                                      showDialog(
+                                        context: context,
+                                        builder: (BuildContext context) {
+                                          return AlertDialog(
+                                            title:
+                                            const Text("Détails de l’adhérent"),
+                                            content: Column(
+                                              crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text("Nom : ${adherent.adherent.nom}"),
+                                                Text("Prénom : ${adherent.adherent.prenom}"),
+                                                Text(
+                                                    "Catégorie d'âge : ${adherent.adherent.categorie_age}"),
+                                                Text(
+                                                    "Présence : ${adherent.appel?.status == true ? 'Oui' : 'Non'}"),
+                                                Text("Date : $formattedDate"),
+                                              ],
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                child: const Text("Fermer"),
+                                                onPressed: () =>
+                                                    Navigator.of(context).pop(),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14, horizontal: 20),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                              color: Colors.grey.shade200),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(child: Text(adherent.adherent.nom)),
+                                          Expanded(child: Text(adherent.adherent.prenom)),
+                                          Expanded(
+                                            child: IconButton(
+                                              icon: Icon(
+                                                adherent.appel != null &&
+                                                    adherent.appel!.status
+                                                    ? Icons.check_circle
+                                                    : Icons.cancel,
+                                                color: adherent.appel != null &&
+                                                    adherent.appel!.status
+                                                    ? Colors.green
+                                                    : Colors.red,
+                                              ),
+                                              onPressed: () async {
+                                                final ancienStatus =
+                                                    adherent.appel?.status ?? false;
+                                                final nouveauStatus = !ancienStatus;
+
+                                                setState(() {
+                                                  if (adherent.appel == null) {
+                                                    adherent.appel = Appel(
+                                                      id: 0,
+                                                      status: nouveauStatus,
+                                                      adherentId: adherent.adherent.id,
+                                                      coursId: cours[0].id,
+                                                      date: DateTime.now()
+                                                          .toIso8601String(),
+                                                    );
+                                                  } else {
+                                                    adherent.appel!.status =
+                                                        nouveauStatus;
+                                                  }
+                                                });
+
+                                                try {
+                                                  await updateorCreateAppelStatus(
+                                                    adherent.adherent.id,
+                                                    cours[0].id,
+                                                    nouveauStatus,
+                                                  );
+                                                } catch (_) {
+                                                  setState(() {
+                                                    adherent.appel!.status = ancienStatus;
+                                                  });
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                          'Erreur lors de la mise à jour'),
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                child: const Text(
-                'Présence ponctuelle',
-                style: TextStyle(color: Colors.white),
-                ),
-                )
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  // ===== Helper Method for Drawer Items =====
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: onTap,
+        splashColor: Colors.black12,
+        highlightColor: Colors.black12,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: ListTile(
+            leading: Icon(icon, color: Colors.black87),
+            title: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          ),
+        ),
       ),
     );
   }

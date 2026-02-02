@@ -14,8 +14,8 @@ class Utilisateur {
   final int? roleId;
   final int dojoId;
   final Role? role;
-  final Dojo? dojo;
   final List<Cours>? cours;
+  final List<Dojo>? dojos;
 
   Utilisateur({
     required this.id,
@@ -28,7 +28,7 @@ class Utilisateur {
     this.roleId,
     required this.dojoId,
     this.role,
-    this.dojo,
+    this.dojos,
     this.cours,
   });
 
@@ -44,7 +44,9 @@ class Utilisateur {
       roleId: json['roleId'],
       dojoId: json['dojoId'] ?? 0,
       role: json['Role'] != null ? Role.fromJson(json['Role']) : null,
-      dojo: json['Dojo'] != null ? Dojo.fromJson(json['Dojo']) : null,
+      dojos: json['Dojos'] != null ? (json['Dojos'] as List)
+          .map((e) => Dojo.fromJson(e))
+          .toList(): null,
       cours: json['Cours'] != null
           ? (json['Cours'] as List)
           .map((e) => Cours.fromJson(e))
