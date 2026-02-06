@@ -248,6 +248,7 @@ class _LoginPageState extends State<LoginPage> {
             'nom': data['nom'],
             'prenom': data['prenom'],
             'email': data['email'],
+            'dojo_id': data['dojo_id'],
             'role': data['role'],
             'token': data['token'],
             'user_id': data['id'],
